@@ -1,0 +1,703 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>You Super Markdown — 安全特化的 Markdown 博客系统</title>
+<meta name="description" content="轻量、安全、可扩展的 Markdown 在线阅读器。SQLite 数据库、CSRF 防护、环境指纹、一键部署。">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>📝</text></svg>" type="image/svg+xml">
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&family=Noto+Sans+SC:wght@400;500;700;900&family=JetBrains+Mono:wght@400;600&display=swap');
+
+:root {
+  --bg: #0a0e17;
+  --bg2: #111827;
+  --bg3: #1a2235;
+  --ink: #e8eef7;
+  --muted: #8b9bb4;
+  --muted2: #5a6a85;
+  --rule: #1e293b;
+  --accent: #6366f1;
+  --accent2: #06b6d4;
+  --accent3: #8b5cf6;
+  --good: #22c55e;
+  --warn: #f59e0b;
+  --bad: #ef4444;
+  --code-bg: #0d1117;
+  --radius: 16px;
+  --shadow: 0 4px 24px rgba(0,0,0,0.3);
+  --glow: 0 0 40px rgba(99,102,241,0.15);
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+html { scroll-behavior: smooth; }
+body {
+  font-family: 'Inter', 'Noto Sans SC', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  background: var(--bg);
+  color: var(--ink);
+  line-height: 1.7;
+  overflow-x: hidden;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ===== Background Grid ===== */
+.bg-grid {
+  position: fixed; inset: 0; z-index: -1; pointer-events: none;
+  background-image:
+    linear-gradient(rgba(99,102,241,0.04) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(99,102,241,0.04) 1px, transparent 1px);
+  background-size: 48px 48px;
+}
+.bg-blob {
+  position: fixed; z-index: -1; pointer-events: none; border-radius: 50%; filter: blur(80px); opacity: 0.3;
+}
+.bg-blob.b1 { top: -100px; left: -100px; width: 400px; height: 400px; background: var(--accent); }
+.bg-blob.b2 { bottom: -100px; right: -100px; width: 500px; height: 500px; background: var(--accent2); }
+.bg-blob.b3 { top: 40%; left: 50%; width: 300px; height: 300px; background: var(--accent3); transform: translateX(-50%); opacity: 0.15; }
+
+.container { max-width: 1200px; margin: 0 auto; padding: 0 24px; }
+
+/* ===== Nav ===== */
+nav {
+  position: fixed; top: 0; left: 0; right: 0; z-index: 100;
+  background: rgba(10,14,23,0.8);
+  backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
+  border-bottom: 1px solid var(--rule);
+  transition: all 0.3s;
+}
+nav .container { display: flex; align-items: center; justify-content: space-between; height: 64px; }
+.nav-brand { display: flex; align-items: center; gap: 10px; font-weight: 800; font-size: 16px; }
+.nav-brand .logo { font-size: 24px; }
+.nav-brand .super { color: var(--accent); }
+.nav-links { display: flex; gap: 6px; align-items: center; }
+.nav-links a {
+  color: var(--muted); text-decoration: none; font-size: 13px; font-weight: 500;
+  padding: 8px 14px; border-radius: 8px; transition: all 0.2s;
+}
+.nav-links a:hover { color: var(--ink); background: var(--bg3); }
+.nav-cta {
+  background: var(--accent); color: #fff !important; padding: 8px 18px !important;
+  border-radius: 8px; font-weight: 600; transition: all 0.2s;
+}
+.nav-cta:hover { background: var(--accent3); transform: translateY(-1px); box-shadow: 0 4px 16px rgba(99,102,241,0.4); }
+.nav-mobile { display: none; background: none; border: none; color: var(--ink); font-size: 22px; cursor: pointer; }
+
+/* ===== Hero ===== */
+header { padding: 120px 0 80px; text-align: center; position: relative; }
+header .badge {
+  display: inline-flex; align-items: center; gap: 8px;
+  background: var(--bg2); border: 1px solid var(--rule); border-radius: 100px;
+  padding: 6px 16px; font-size: 12px; color: var(--muted); margin-bottom: 24px;
+}
+header .badge .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--good); animation: pulse 2s infinite; }
+@keyframes pulse { 0%,100%{opacity:1;} 50%{opacity:0.4;} }
+header h1 {
+  font-size: clamp(36px, 6vw, 64px); font-weight: 800; line-height: 1.15;
+  margin-bottom: 20px; letter-spacing: -0.02em;
+}
+header h1 .gradient {
+  background: linear-gradient(135deg, var(--accent), var(--accent2), var(--accent3));
+  -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent;
+}
+header h1 .super-tag {
+  display: inline-block; font-size: 0.5em; vertical-align: super;
+  background: var(--accent); color: #fff; padding: 2px 8px; border-radius: 6px;
+  margin-left: 4px; font-weight: 700;
+}
+header .tagline { font-size: clamp(16px, 2.5vw, 20px); color: var(--muted); max-width: 640px; margin: 0 auto 36px; }
+header .tagline strong { color: var(--accent2); font-weight: 600; }
+header .cta-group { display: flex; gap: 16px; justify-content: center; flex-wrap: wrap; }
+header .cta {
+  display: inline-flex; align-items: center; gap: 8px;
+  padding: 14px 32px; border-radius: 12px; font-weight: 600; font-size: 15px;
+  text-decoration: none; transition: all 0.25s; cursor: pointer; border: none;
+}
+header .cta.primary { background: var(--accent); color: #fff; box-shadow: 0 4px 24px rgba(99,102,241,0.3); }
+header .cta.primary:hover { background: var(--accent3); transform: translateY(-2px); box-shadow: 0 8px 32px rgba(99,102,241,0.4); }
+header .cta.secondary { background: var(--bg2); color: var(--ink); border: 1px solid var(--rule); }
+header .cta.secondary:hover { border-color: var(--accent); background: var(--bg3); transform: translateY(-2px); }
+
+/* Hero stats */
+.hero-stats {
+  display: flex; gap: 48px; justify-content: center; margin-top: 64px; flex-wrap: wrap;
+}
+.hero-stat { text-align: center; }
+.hero-stat .num { font-size: 32px; font-weight: 800; color: var(--accent2); font-family: 'JetBrains Mono', monospace; }
+.hero-stat .label { font-size: 12px; color: var(--muted2); margin-top: 4px; }
+
+/* ===== Sections ===== */
+section { padding: 80px 0; }
+section h2 { font-size: clamp(28px, 4vw, 40px); font-weight: 800; text-align: center; margin-bottom: 12px; letter-spacing: -0.02em; }
+section h2 .gradient { background: linear-gradient(135deg, var(--accent), var(--accent2)); -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; }
+section .subtitle { text-align: center; color: var(--muted); font-size: 16px; max-width: 580px; margin: 0 auto 48px; }
+
+/* ===== Feature Cards ===== */
+.feature-grid {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 20px;
+}
+.feature-card {
+  background: var(--bg2); border: 1px solid var(--rule); border-radius: var(--radius);
+  padding: 28px; transition: all 0.3s; position: relative; overflow: hidden;
+}
+.feature-card::before {
+  content: ''; position: absolute; top: 0; left: 0; right: 0; height: 2px;
+  background: linear-gradient(90deg, transparent, var(--accent), transparent);
+  opacity: 0; transition: opacity 0.3s;
+}
+.feature-card:hover { border-color: var(--accent); transform: translateY(-4px); box-shadow: var(--shadow), var(--glow); }
+.feature-card:hover::before { opacity: 1; }
+.feature-card .icon {
+  width: 48px; height: 48px; border-radius: 12px; display: flex; align-items: center; justify-content: center;
+  font-size: 24px; margin-bottom: 16px;
+}
+.feature-card .icon.purple { background: rgba(99,102,241,0.15); }
+.feature-card .icon.cyan { background: rgba(6,182,212,0.15); }
+.feature-card .icon.green { background: rgba(34,197,94,0.15); }
+.feature-card .icon.amber { background: rgba(245,158,11,0.15); }
+.feature-card .icon.red { background: rgba(239,68,68,0.15); }
+.feature-card .icon.violet { background: rgba(139,92,246,0.15); }
+.feature-card h3 { font-size: 17px; font-weight: 700; margin-bottom: 8px; }
+.feature-card p { font-size: 13px; color: var(--muted); line-height: 1.6; }
+.feature-card .tag {
+  display: inline-block; font-size: 10px; font-weight: 700; padding: 2px 8px; border-radius: 4px;
+  margin-top: 12px; text-transform: uppercase; letter-spacing: 0.05em;
+}
+.feature-card .tag.core { background: rgba(99,102,241,0.15); color: var(--accent); }
+.feature-card .tag.security { background: rgba(239,68,68,0.15); color: var(--bad); }
+.feature-card .tag.enterprise { background: rgba(245,158,11,0.15); color: var(--warn); }
+
+/* ===== Editor Demo ===== */
+.editor-section { background: var(--bg2); border-top: 1px solid var(--rule); border-bottom: 1px solid var(--rule); }
+.editor-wrap {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 0; border-radius: var(--radius);
+  overflow: hidden; border: 1px solid var(--rule); box-shadow: var(--shadow); max-width: 900px; margin: 0 auto;
+}
+.editor-pane { display: flex; flex-direction: column; }
+.editor-header {
+  display: flex; align-items: center; gap: 8px; padding: 12px 16px;
+  background: var(--bg3); border-bottom: 1px solid var(--rule); font-size: 12px; color: var(--muted); font-weight: 600;
+}
+.editor-header .dots { display: flex; gap: 6px; }
+.editor-header .dots span { width: 10px; height: 10px; border-radius: 50%; }
+.editor-header .dots .r { background: #ff5f56; }
+.editor-header .dots .y { background: #ffbd2e; }
+.editor-header .dots .g { background: #27c93f; }
+.editor-textarea {
+  flex: 1; background: var(--code-bg); border: none; outline: none; resize: none;
+  padding: 20px; font-family: 'JetBrains Mono', monospace; font-size: 13px; line-height: 1.7;
+  color: var(--ink); min-height: 340px;
+}
+.editor-preview {
+  flex: 1; background: #fff; padding: 20px; overflow-y: auto; min-height: 340px;
+  color: #1a1a1a; font-size: 14px; line-height: 1.8;
+}
+.editor-preview h1 { font-size: 22px; font-weight: 700; margin-bottom: 12px; }
+.editor-preview h2 { font-size: 18px; font-weight: 600; margin: 16px 0 8px; text-align: left; }
+.editor-preview p { margin-bottom: 10px; }
+.editor-preview ul { padding-left: 20px; margin-bottom: 10px; }
+.editor-preview li { margin-bottom: 4px; }
+.editor-preview code { background: #f0f0f0; padding: 2px 6px; border-radius: 4px; font-family: 'JetBrains Mono', monospace; font-size: 12px; }
+.editor-preview pre { background: #1e1e1e; color: #d4d4d4; padding: 14px; border-radius: 8px; overflow-x: auto; margin-bottom: 12px; }
+.editor-preview pre code { background: none; padding: 0; color: inherit; }
+.editor-preview blockquote { border-left: 3px solid #6366f1; padding-left: 14px; margin: 10px 0; color: #555; }
+.editor-preview strong { font-weight: 700; }
+
+/* ===== Security Section ===== */
+.security-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; max-width: 900px; margin: 0 auto; }
+.security-item {
+  background: var(--bg2); border: 1px solid var(--rule); border-radius: 12px;
+  padding: 20px; display: flex; gap: 14px; align-items: flex-start; transition: all 0.3s;
+}
+.security-item:hover { border-color: var(--bad); }
+.security-item .check {
+  width: 24px; height: 24px; border-radius: 6px; background: rgba(34,197,94,0.15);
+  display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+  color: var(--good); font-size: 14px; font-weight: 700;
+}
+.security-item .content h4 { font-size: 14px; font-weight: 600; margin-bottom: 4px; }
+.security-item .content p { font-size: 12px; color: var(--muted); }
+
+/* ===== Comparison ===== */
+.compare-table {
+  width: 100%; max-width: 1000px; margin: 0 auto; border-collapse: collapse;
+  border-radius: var(--radius); overflow: hidden; border: 1px solid var(--rule);
+}
+.compare-table th, .compare-table td { padding: 14px 18px; text-align: left; font-size: 13px; border-bottom: 1px solid var(--rule); }
+.compare-table th { background: var(--bg3); font-weight: 600; color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: 0.05em; }
+.compare-table td:first-child { font-weight: 600; }
+.compare-table .ym { color: var(--muted2); }
+.compare-table .ysm { color: var(--good); font-weight: 600; }
+.compare-table tr:hover { background: var(--bg2); }
+.compare-table .yes { color: var(--good); }
+.compare-table .no { color: var(--bad); }
+.compare-table .partial { color: var(--warn); }
+
+/* ===== Quick Start ===== */
+.steps { display: flex; gap: 20px; max-width: 900px; margin: 0 auto; flex-wrap: wrap; justify-content: center; }
+.step-card {
+  flex: 1; min-width: 240px; max-width: 280px; background: var(--bg2);
+  border: 1px solid var(--rule); border-radius: var(--radius); padding: 28px; position: relative;
+}
+.step-card .step-num {
+  position: absolute; top: -14px; left: 24px; width: 32px; height: 32px;
+  background: var(--accent); color: #fff; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 14px;
+}
+.step-card h3 { font-size: 15px; font-weight: 600; margin-bottom: 8px; margin-top: 8px; }
+.step-card p { font-size: 13px; color: var(--muted); }
+.step-card .code {
+  margin-top: 14px; background: var(--code-bg); border-radius: 8px; padding: 12px;
+  font-family: 'JetBrains Mono', monospace; font-size: 12px; color: var(--accent2);
+  border: 1px solid var(--rule); overflow-x: auto;
+}
+
+/* ===== Enterprise Section ===== */
+.enterprise-section {
+  background: linear-gradient(180deg, var(--bg) 0%, var(--bg2) 50%, var(--bg) 100%);
+  border-top: 1px solid var(--rule); border-bottom: 1px solid var(--rule);
+}
+.enterprise-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 16px; max-width: 1000px; margin: 0 auto; }
+.enterprise-card {
+  background: var(--bg3); border: 1px solid var(--rule); border-radius: 12px;
+  padding: 24px; transition: all 0.3s;
+}
+.enterprise-card:hover { border-color: var(--warn); transform: translateY(-2px); }
+.enterprise-card .icon { font-size: 28px; margin-bottom: 12px; }
+.enterprise-card h3 { font-size: 15px; font-weight: 600; margin-bottom: 6px; }
+.enterprise-card p { font-size: 12px; color: var(--muted); }
+.enterprise-card .stats { display: flex; gap: 16px; margin-top: 12px; }
+.enterprise-card .stat { font-size: 11px; color: var(--accent2); font-family: 'JetBrains Mono', monospace; }
+
+/* ===== Tech Stack ===== */
+.tech-grid { display: flex; gap: 12px; flex-wrap: wrap; justify-content: center; max-width: 800px; margin: 0 auto; }
+.tech-tag {
+  background: var(--bg2); border: 1px solid var(--rule); border-radius: 100px;
+  padding: 10px 20px; font-size: 13px; font-weight: 500; transition: all 0.3s;
+  display: flex; align-items: center; gap: 8px;
+}
+.tech-tag:hover { border-color: var(--accent); background: var(--bg3); }
+.tech-tag .dot { width: 8px; height: 8px; border-radius: 50%; }
+.tech-tag .dot.php { background: #8892BF; }
+.tech-tag .dot.sqlite { background: #003B57; }
+.tech-tag .dot.python { background: #3776AB; }
+.tech-tag .dot.marked { background: #6366f1; }
+.tech-tag .dot.hljs { background: #f59e0b; }
+.tech-tag .dot.mermaid { background: #FF367E; }
+.tech-tag .dot.mathjax { background: #8b5cf6; }
+
+/* ===== CTA Footer ===== */
+.cta-section { text-align: center; padding: 80px 0; }
+.cta-section h2 { margin-bottom: 16px; }
+.cta-section p { color: var(--muted); margin-bottom: 32px; max-width: 500px; margin-left: auto; margin-right: auto; }
+
+footer { border-top: 1px solid var(--rule); padding: 40px 0; }
+footer .container { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 16px; }
+footer .footer-brand { display: flex; align-items: center; gap: 8px; font-weight: 700; font-size: 14px; }
+footer .footer-links { display: flex; gap: 20px; }
+footer .footer-links a { color: var(--muted); text-decoration: none; font-size: 13px; transition: color 0.2s; }
+footer .footer-links a:hover { color: var(--ink); }
+footer .footer-copy { color: var(--muted2); font-size: 12px; }
+
+/* ===== Responsive ===== */
+@media (max-width: 768px) {
+  .nav-links { display: none; }
+  .nav-mobile { display: block; }
+  .editor-wrap { grid-template-columns: 1fr; }
+  .security-grid { grid-template-columns: 1fr; }
+  .hero-stats { gap: 24px; }
+  .hero-stat .num { font-size: 24px; }
+}
+
+/* ===== Scroll Reveal ===== */
+.reveal { opacity: 0; transform: translateY(30px); transition: all 0.6s ease; }
+.reveal.visible { opacity: 1; transform: translateY(0); }
+
+/* ===== Marquee ===== */
+.marquee {
+  overflow: hidden; white-space: nowrap; max-width: 100%; margin: 0 auto;
+  mask-image: linear-gradient(90deg, transparent, #000 10%, #000 90%, transparent);
+  -webkit-mask-image: linear-gradient(90deg, transparent, #000 10%, #000 90%, transparent);
+}
+.marquee-track { display: inline-block; animation: marquee 30s linear infinite; }
+.marquee-track span {
+  font-size: 14px; color: var(--muted2); margin-right: 32px; font-weight: 500;
+}
+.marquee-track span .sep { color: var(--accent); margin-right: 32px; }
+@keyframes marquee { from { transform: translateX(0); } to { transform: translateX(-50%); } }
+</style>
+</head>
+<body>
+
+<div class="bg-grid"></div>
+<div class="bg-blob b1"></div>
+<div class="bg-blob b2"></div>
+<div class="bg-blob b3"></div>
+
+<nav>
+  <div class="container">
+    <div class="nav-brand">
+      <span class="logo">📝</span>
+      <span>You <span class="super">Super</span> Markdown</span>
+    </div>
+    <div class="nav-links">
+      <a href="#features">功能特性</a>
+      <a href="#editor">在线体验</a>
+      <a href="#security">安全体系</a>
+      <a href="#quickstart">快速开始</a>
+      <a href="https://github.com/Xiao-youyu/you-super-markdown" target="_blank" class="nav-cta">获取源码</a>
+    </div>
+    <button class="nav-mobile" onclick="document.querySelector('.nav-links').classList.toggle('show')">☰</button>
+  </div>
+</nav>
+
+<header>
+  <div class="container">
+    <div class="badge"><span class="dot"></span> v4.9.2 · 已通过第三方安全审计</div>
+    <h1>
+      用 <span class="gradient">Markdown</span> 书写，<br>
+      安心地分享<span class="super-tag">SUPER</span>
+    </h1>
+    <p class="tagline">
+      轻量、安全、可扩展的 Markdown 在线阅读器。<br>
+      <strong>SQLite 数据库</strong> · <strong>CSRF 防护</strong> · <strong>环境指纹</strong> · <strong>一键部署</strong>
+    </p>
+    <div class="cta-group">
+      <a href="https://github.com/Xiao-youyu/you-super-markdown" target="_blank" class="cta primary">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.37 1.23-3.21-.12-.3-.54-1.515.12-3.15 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.635.24 2.85.12 3.15.765.84 1.23 1.905 1.23 3.21 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z"/></svg>
+        获取源码
+      </a>
+      <a href="#editor" class="cta secondary">在线体验</a>
+    </div>
+    <div class="hero-stats">
+      <div class="hero-stat"><div class="num">27K+</div><div class="label">代码行数</div></div>
+      <div class="hero-stat"><div class="num">4.9.2</div><div class="label">当前版本</div></div>
+      <div class="hero-stat"><div class="num">v4.8.0</div><div class="label">安全审计通过</div></div>
+      <div class="hero-stat"><div class="num">MIT</div><div class="label">开源协议</div></div>
+    </div>
+    <div class="marquee" style="margin-top: 48px;">
+      <div class="marquee-track">
+        <span>Markdown 渲染<span class="sep">·</span>代码高亮<span class="sep">·</span>Mermaid 图表<span class="sep">·</span>LaTeX 公式<span class="sep">·</span>全文搜索<span class="sep">·</span>文档目录<span class="sep">·</span>评论系统<span class="sep">·</span>多级回复<span class="sep">·</span>用户管理<span class="sep">·</span>角色权限<span class="sep">·</span>CSRF 防护<span class="sep">·</span>环境指纹<span class="sep">·</span>哈希链审计<span class="sep">·</span>蜜罐同步<span class="sep">·</span>文件完整性监控<span class="sep">·</span>明暗主题<span class="sep">·</span>主题色定制<span class="sep">·</span>RSS 订阅<span class="sep">·</span>短链分享<span class="sep">·</span>音乐播放器<span class="sep">·</span>一键部署<span class="sep">·</span>CLI 管理工具<span class="sep">·</span></span>
+      </div>
+    </div>
+  </div>
+</header>
+
+<section id="features" class="reveal">
+  <div class="container">
+    <h2>不只是一个 <span class="gradient">博客系统</span></h2>
+    <p class="subtitle">从 Markdown 渲染到安全防护，从全文搜索到一键部署——每一层都为安全和稳定而设计。</p>
+    <div class="feature-grid">
+      <div class="feature-card">
+        <div class="icon purple">📝</div>
+        <h3>Markdown 渲染引擎</h3>
+        <p>基于 marked.js 的完整 Markdown 语法支持，搭配 highlight.js 多语言代码高亮、Mermaid 流程图、LaTeX 数学公式渲染。一键复制代码块。</p>
+        <span class="tag core">核心</span>
+      </div>
+      <div class="feature-card">
+        <div class="icon cyan">🔍</div>
+        <h3>全文搜索 + 文档目录</h3>
+        <p>内置毫秒级搜索引擎，自动生成文档目录。长文导航、快速定位，毫秒级响应。</p>
+        <span class="tag core">核心</span>
+      </div>
+      <div class="feature-card">
+        <div class="icon green">💬</div>
+        <h3>评论互动系统</h3>
+        <p>多级回复、头像自动获取、访客可评论。评论审核机制，防垃圾评论。实时刷新。</p>
+        <span class="tag core">核心</span>
+      </div>
+      <div class="feature-card">
+        <div class="icon amber">👤</div>
+        <h3>用户与角色权限</h3>
+        <p>注册、登录、多角色权限分层。管理员管内容，写作者发文，访客看内容，各司其职。安全会话管理。</p>
+        <span class="tag core">核心</span>
+      </div>
+      <div class="feature-card">
+        <div class="icon red">🛡️</div>
+        <h3>安全防护体系</h3>
+        <p>CSRF Token、环境指纹（Canvas + FNV-1a）、哈希链审计日志、IP 封禁、请求频率限制、SSRF 防护。多层次纵深防御。</p>
+        <span class="tag security">安全</span>
+      </div>
+      <div class="feature-card">
+        <div class="icon violet">🐍</div>
+        <h3>Python 守护进程</h3>
+        <p>inotify 文件完整性实时监控，蜜罐同步，异常行为检测。1115 行守护代码，7×24 运行。</p>
+        <span class="tag security">安全</span>
+      </div>
+      <div class="feature-card">
+        <div class="icon purple">🎵</div>
+        <h3>音乐播放器</h3>
+        <p>插件化音乐平台，支持多平台接入。出站限速（60秒40次/IP），SSRF 防护，安全请求层。</p>
+        <span class="tag core">核心</span>
+      </div>
+      <div class="feature-card">
+        <div class="icon cyan">📦</div>
+        <h3>一键部署 + CLI 管理</h3>
+        <p>1334 行安装脚本，一键完成部署。ym-admin 命令行管理工具，无需宝塔面板。</p>
+        <span class="tag core">核心</span>
+      </div>
+      <div class="feature-card">
+        <div class="icon green">🎨</div>
+        <h3>主题与个性化</h3>
+        <p>明暗模式跟随系统、HSL 主题色定制、字体选择、背景图/API 壁纸、毛玻璃效果。响应式全端适配。</p>
+        <span class="tag core">核心</span>
+      </div>
+      <div class="feature-card">
+        <div class="icon amber">📡</div>
+        <h3>RSS + 短链分享</h3>
+        <p>RSS 订阅源自动生成，每篇文章短链接生成。方便分享到任何平台。</p>
+        <span class="tag core">核心</span>
+      </div>
+      <div class="feature-card">
+        <div class="icon red">🔒</div>
+        <h3>防篡改 + 反向追踪</h3>
+        <p>文件完整性校验，内容防篡改。反向追踪能力，后台可追溯至任意违规内容发送者。</p>
+        <span class="tag security">安全</span>
+      </div>
+      <div class="feature-card">
+        <div class="icon violet">🖼️</div>
+        <h3>缩略图 + 封面池</h3>
+        <p>GD 逐级降质缩略图服务，封面池先服务后补图机制。图片资源高效管理。</p>
+        <span class="tag core">核心</span>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="editor" class="editor-section reveal">
+  <div class="container">
+    <h2>左边写，<span class="gradient">右边看</span></h2>
+    <p class="subtitle">在编辑区输入 Markdown 语法，右侧实时渲染。无需刷新页面。</p>
+    <div class="editor-wrap">
+      <div class="editor-pane">
+        <div class="editor-header">
+          <div class="dots"><span class="r"></span><span class="y"></span><span class="g"></span></div>
+          <span>editor.md</span>
+        </div>
+        <textarea class="editor-textarea" id="mdInput" spellcheck="false"># 你好，You Super Markdown
+
+这是一个 **安全特化** 的 Markdown 在线阅读器。
+
+## 它能做什么
+
+- 实时 Markdown 渲染
+- 代码语法高亮
+- 支持 `行内代码` 和代码块
+- Mermaid 流程图 + LaTeX 公式
+
+> 无需数据库配置，上传即用。
+
+## 代码示例
+
+```php
+<?php
+// 这就是全部了
+echo "Hello, You Super Markdown!";
+```
+
+## 安全特性
+
+| 防护层 | 状态 |
+|--------|------|
+| CSRF Token | ✅ |
+| 环境指纹 | ✅ |
+| 哈希链审计 | ✅ |
+| 文件完整性 | ✅ |
+
+*开始安全地写作吧。*</textarea>
+      </div>
+      <div class="editor-pane">
+        <div class="editor-header">
+          <div class="dots"><span class="r"></span><span class="y"></span><span class="g"></span></div>
+          <span>preview</span>
+        </div>
+        <div class="editor-preview" id="mdPreview"></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="security" class="reveal">
+  <div class="container">
+    <h2>安全不是<span class="gradient">附加功能</span></h2>
+    <p class="subtitle">从数据层到运维层，每一环都内置安全设计。这不是插件能补的，是从架构开始的。</p>
+    <div class="security-grid">
+      <div class="security-item">
+        <div class="check">✓</div>
+        <div class="content">
+          <h4>CSRF Token 验证</h4>
+          <p>所有表单提交和 API 请求强制携带 CSRF Token，服务端验证，防跨站请求伪造。</p>
+        </div>
+      </div>
+      <div class="security-item">
+        <div class="check">✓</div>
+        <div class="content">
+          <h4>安全会话管理</h4>
+          <p>HttpOnly + SameSite=Strict + Secure，PHPSESSID 配置完整，防会话劫持。</p>
+        </div>
+      </div>
+      <div class="security-item">
+        <div class="check">✓</div>
+        <div class="content">
+          <h4>环境指纹 (Canvas + FNV-1a)</h4>
+          <p>浏览器环境指纹生成，识别异常客户端，辅助反欺诈和追踪。</p>
+        </div>
+      </div>
+      <div class="security-item">
+        <div class="check">✓</div>
+        <div class="content">
+          <h4>哈希链审计日志</h4>
+          <p>操作日志以哈希链串联，防篡改。任何删除或篡改可被检测。</p>
+        </div>
+      </div>
+      <div class="security-item">
+        <div class="check">✓</div>
+        <div class="content">
+          <h4>Python 守护进程</h4>
+          <p>inotify 文件完整性实时监控（1115 行），异常即告警，7×24 运行。</p>
+        </div>
+      </div>
+      <div class="security-item">
+        <div class="check">✓</div>
+        <div class="content">
+          <h4>蜜罐同步</h4>
+          <p>ym-hfish-sync.py 蜜罐数据同步，主动收集攻击者信息。</p>
+        </div>
+      </div>
+      <div class="security-item">
+        <div class="check">✓</div>
+        <div class="content">
+          <h4>SSRF 防护</h4>
+          <p>isPrivateHost 检测 + 域名白名单，防服务端请求伪造攻击。</p>
+        </div>
+      </div>
+      <div class="security-item">
+        <div class="check">✓</div>
+        <div class="content">
+          <h4>出站限速</h4>
+          <p>音乐 API 出站请求 60 秒 40 次/IP，防滥用和资源耗尽。</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="quickstart" class="reveal">
+  <div class="container">
+    <h2>一分钟<span class="gradient">上线</span></h2>
+    <p class="subtitle">一键安装脚本，无需宝塔面板，无需 Composer，无需 npm build。</p>
+    <div class="steps">
+      <div class="step-card">
+        <div class="step-num">1</div>
+        <h3>下载</h3>
+        <p>克隆仓库或下载 Release 压缩包。</p>
+        <div class="code">git clone https://github.com/Xiao-youyu/you-super-markdown.git</div>
+      </div>
+      <div class="step-card">
+        <div class="step-num">2</div>
+        <h3>安装</h3>
+        <p>运行一键安装脚本，自动完成所有配置。</p>
+        <div class="code">sudo bash ym-install.sh</div>
+      </div>
+      <div class="step-card">
+        <div class="step-num">3</div>
+        <h3>访问</h3>
+        <p>打开浏览器，进入后台，开始上传文档。</p>
+        <div class="code">your-domain.com/sc.php</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="reveal">
+  <div class="container">
+    <h2>技术<span class="gradient">栈</span></h2>
+    <p class="subtitle">选择稳定而非最新——每个依赖都经过验证才留存。</p>
+    <div class="tech-grid">
+      <div class="tech-tag"><span class="dot php"></span>PHP 7.4+</div>
+      <div class="tech-tag"><span class="dot sqlite"></span>SQLite (WAL)</div>
+      <div class="tech-tag"><span class="dot python"></span>Python 3 (守护进程)</div>
+      <div class="tech-tag"><span class="dot marked"></span>marked.js</div>
+      <div class="tech-tag"><span class="dot hljs"></span>highlight.js</div>
+      <div class="tech-tag"><span class="dot mermaid"></span>Mermaid</div>
+      <div class="tech-tag"><span class="dot mathjax"></span>MathJax</div>
+      <div class="tech-tag">Apache / Nginx</div>
+      <div class="tech-tag">本地 Vendor (零 CDN)</div>
+    </div>
+  </div>
+</section>
+
+<section class="cta-section reveal">
+  <div class="container">
+    <h2>试试看，<span class="gradient">你会安心</span></h2>
+    <p>开源免费，MIT 协议。安全特化，稳定优先。</p>
+    <div class="cta-group">
+      <a href="https://github.com/Xiao-youyu/you-super-markdown" target="_blank" class="cta primary">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.37 1.23-3.21-.12-.3-.54-1.515.12-3.15 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.635.24 2.85.12 3.15.765.84 1.23 1.905 1.23 3.21 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z"/></svg>
+        Star on GitHub
+      </a>
+    </div>
+  </div>
+</section>
+
+<footer>
+  <div class="container">
+    <div class="footer-brand">
+      <span>📝</span>
+      <span>You Super Markdown</span>
+    </div>
+    <div class="footer-links">
+      <a href="https://github.com/Xiao-youyu/you-super-markdown" target="_blank">GitHub</a>
+      <a href="https://github.com/Xiao-youyu/you-super-markdown/issues" target="_blank">Issues</a>
+      <a href="#features">功能</a>
+      <a href="#security">安全</a>
+    </div>
+    <div class="footer-copy">MIT License · v4.9.2</div>
+  </div>
+</footer>
+
+<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+<script src="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.9.0/build/highlight.min.js"></script>
+<script>
+// Editor demo
+const mdInput = document.getElementById('mdInput');
+const mdPreview = document.getElementById('mdPreview');
+
+marked.setOptions({
+  highlight: function(code, lang) {
+    if (lang && hljs.getLanguage(lang)) {
+      return hljs.highlight(code, { language: lang }).value;
+    }
+    return hljs.highlightAuto(code).value;
+  },
+  breaks: true
+});
+
+function renderPreview() {
+  mdPreview.innerHTML = marked.parse(mdInput.value);
+}
+
+mdInput.addEventListener('input', renderPreview);
+renderPreview();
+
+// Scroll reveal
+const observer = new IntersectionObserver((entries) => {
+  entries.forEach(e => {
+    if (e.isIntersecting) e.target.classList.add('visible');
+  });
+}, { threshold: 0.1 });
+document.querySelectorAll('.reveal').forEach(el => observer.observe(el));
+
+// Nav active
+const navLinks = document.querySelectorAll('.nav-links a[href^="#"]');
+window.addEventListener('scroll', () => {
+  let current = '';
+  document.querySelectorAll('section').forEach(s => {
+    if (window.scrollY >= s.offsetTop - 100) current = s.id;
+  });
+  navLinks.forEach(l => {
+    l.classList.toggle('active', l.getAttribute('href') === '#' + current);
+  });
+});
+</script>
+</body>
+</html>
